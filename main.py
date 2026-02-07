@@ -1,80 +1,118 @@
+import os
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
-# --- ДАННЫЕ ИЗ ТВОЕГО СООБЩЕНИЯ ---
-TOKEN = "8185440589:AAH-QOBqKunLzLQvYmhGt8osUOKXeR4gd8E"
-ADMIN_ID = 8239382195  # Твой ID, куда будут падать заказы
+# Состояния
+class Order(StatesGroup):
+    lang = State()
+    waiting_for_topic = State()
+    waiting_for_pages = State()
+    waiting_for_site_details = State()
+    waiting_for_bot_token = State()
+    waiting_for_tech_problem = State()
 
+TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = 8239382195 # Твой ID
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Тексты на трех языках
-TEXTS = {
-    'ru': {
-        'welcome': "Привет! Я твой личный помощник. Выберите язык интерфейса:",
-        'services': "Наши услуги:",
-        'sent': "✅ Запрос отправлен! Администратор @kvonyeon свяжется с вами скоро.",
-        'btn_admin': "👤 Связаться с админом",
-        'menu': ["Презентации", "Курсовые", "Самостоятельные", "Создать сайт", "Создать бота", "Помощь с ПК/Тел"]
-    },
+# Словарь текстов
+MESSAGES = {
     'uz': {
-        'welcome': "Salom! Men sizning shaxsiy yordamchingizman. Tilni tanlang:",
-        'services': "Bizning xizmatlar:",
-        'sent': "✅ So'rov yuborildi! Administrator @kvonyeon tez orada siz bilan bog'lanadi.",
-        'btn_admin': "👤 Admin bilan bog'lanish",
-        'menu': ["Prezentatsiyalar", "Kurs ishlari", "Mustaqil ishlar", "Sayt yaratish", "Bot yaratish", "Kompyuter/Tel yordami"]
+        'start': "Tilni tanlang:",
+        'services': "Xizmatni tanlang:",
+        'topic': "Mavzu nima haqida?",
+        'pages': "Necha varaq bo'lishi kerak?",
+        'done': "Sizning so'rovingiz adminga yuborildi.",
+        'bot_inst': "@BotFather orqali bot oching va menga TOKEN yuboring.",
+        'problem': "Muammoingiz nimada?",
+        'contact': "Admin bilan bog'lanish",
+        'btn_pres': "Prezentatsiya", 'btn_kurs': "Kursovoy", 'btn_site': "Sayt yaratish",
+        'btn_bot': "Bot yaratish", 'btn_help': "PK/Tel yordam", 'btn_admin': "Admin bilan aloqa"
+    },
+    'ru': {
+        'start': "Выберите язык:",
+        'services': "Выберите услугу:",
+        'topic': "На какую тему?",
+        'pages': "Сколько листов должно быть?",
+        'done': "Ваш запрос отправлен администратору.",
+        'bot_inst': "Создайте бота в @BotFather и отправьте мне TOKEN.",
+        'problem': "Какая у вас проблема?",
+        'contact': "Связаться с админом",
+        'btn_pres': "Презентация", 'btn_kurs': "Курсовая", 'btn_site': "Создать сайт",
+        'btn_bot': "Создать бота", 'btn_help': "Помощь с ПК/Тел", 'btn_admin': "Связь с админом"
     },
     'en': {
-        'welcome': "Hello! I am your personal assistant. Choose a language:",
-        'services': "Our services:",
-        'sent': "✅ Request sent! Administrator @kvonyeon will contact you shortly.",
-        'btn_admin': "👤 Contact Admin",
-        'menu': ["Presentations", "Term papers", "Homework", "Create website", "Create bot", "PC/Phone help"]
+        'start': "Choose language:",
+        'services': "Choose a service:",
+        'topic': "What is the topic?",
+        'pages': "How many pages?",
+        'done': "Your request has been sent to the admin.",
+        'bot_inst': "Create a bot in @BotFather and send me the TOKEN.",
+        'problem': "What is your problem?",
+        'contact': "Contact Admin",
+        'btn_pres': "Presentation", 'btn_kurs': "Coursework", 'btn_site': "Create Website",
+        'btn_bot': "Create Bot", 'btn_help': "PC/Phone Help", 'btn_admin': "Contact Admin"
     }
 }
 
+def get_lang_kb():
+    return types.ReplyKeyboardMarkup(keyboard=[
+        [types.KeyboardButton(text="🇺🇿 O'zbekcha"), types.KeyboardButton(text="🇷🇺 Русский"), types.KeyboardButton(text="🇬🇧 English")]
+    ], resize_keyboard=True)
+
+def get_services_kb(lang):
+    m = MESSAGES[lang]
+    return types.ReplyKeyboardMarkup(keyboard=[
+        [types.KeyboardButton(text=m['btn_pres']), types.KeyboardButton(text=m['btn_kurs'])],
+        [types.KeyboardButton(text=m['btn_site']), types.KeyboardButton(text=m['btn_bot'])],
+        [types.KeyboardButton(text=m['btn_help']), types.KeyboardButton(text=m['btn_admin'])]
+    ], resize_keyboard=True)
+
 @dp.message(Command("start"))
-async def start_cmd(message: types.Message):
-    builder = InlineKeyboardBuilder()
-    builder.row(types.InlineKeyboardButton(text="🇷🇺 Русский", callback_data="lang_ru"))
-    builder.row(types.InlineKeyboardButton(text="🇺🇿 O'zbekcha", callback_data="lang_uz"))
-    builder.row(types.InlineKeyboardButton(text="🇬🇧 English", callback_data="lang_en"))
-    await message.answer(TEXTS['ru']['welcome'], reply_markup=builder.as_markup())
+async def cmd_start(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("🇺🇿 Tilni tanlang / 🇷🇺 Выберите язык / 🇬🇧 Choose language:", reply_markup=get_lang_kb())
 
-@dp.callback_query(F.data.startswith("lang_"))
-async def set_language(callback: types.CallbackQuery):
-    lang = callback.data.split("_")[1]
-    builder = InlineKeyboardBuilder()
-    
-    for service in TEXTS[lang]['menu']:
-        builder.row(types.InlineKeyboardButton(text=service, callback_data=f"order_{lang}_{service[:15]}"))
-    
-    builder.row(types.InlineKeyboardButton(text=TEXTS[lang]['btn_admin'], callback_data=f"contact_admin_{lang}"))
-    await callback.message.edit_text(TEXTS[lang]['services'], reply_markup=builder.as_markup())
+@dp.message(F.text.contains("O'zbekcha"))
+async def set_uz(m: types.Message, state: FSMContext):
+    await state.update_data(lang='uz')
+    await m.answer(MESSAGES['uz']['services'], reply_markup=get_services_kb('uz'))
 
-@dp.callback_query(F.data.startswith("order_"))
-async def process_order(callback: types.CallbackQuery):
-    _, lang, service = callback.data.split("_")
-    await callback.answer(TEXTS[lang]['sent'], show_alert=True)
-    
-    user = callback.from_user
-    admin_msg = (f"🚀 **НОВЫЙ ЗАКАЗ!**\n\n"
-                 f"👤 Клиент: {user.full_name}\n"
-                 f"🔗 Юзер: @{user.username if user.username else 'нет'}\n"
-                 f"🆔 ID: `{user.id}`\n"
-                 f"🛠 Услуга: **{service}**")
-    
-    await bot.send_message(ADMIN_ID, admin_msg, parse_mode="Markdown")
+@dp.message(F.text.contains("Русский"))
+async def set_ru(m: types.Message, state: FSMContext):
+    await state.update_data(lang='ru')
+    await m.answer(MESSAGES['ru']['services'], reply_markup=get_services_kb('ru'))
 
-@dp.callback_query(F.data.startswith("contact_admin_"))
-async def contact_admin(callback: types.CallbackQuery):
-    lang = callback.data.split("_")[2]
-    await callback.answer(f"Write to: @kvonyeon", show_alert=True)
+@dp.message(F.text.contains("English"))
+async def set_en(m: types.Message, state: FSMContext):
+    await state.update_data(lang='en')
+    await m.answer(MESSAGES['en']['services'], reply_markup=get_services_kb('en'))
 
+# Пример логики для Презентации (автоматически на нужном языке)
+@dp.message(lambda m: any(m.text == MESSAGES[l]['btn_pres'] for l in MESSAGES))
+async def start_pres(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get('lang', 'ru')
+    await state.update_data(service="Презентация")
+    await message.answer(MESSAGES[lang]['topic'])
+    await state.set_state(Order.waiting_for_topic)
+
+# Логика для связи с админом
+@dp.message(lambda m: any(m.text == MESSAGES[l]['btn_admin'] for l in MESSAGES))
+async def contact_admin(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    lang = data.get('lang', 'ru')
+    url_button = types.InlineKeyboardMarkup(inline_keyboard=[
+        [types.InlineKeyboardButton(text=MESSAGES[lang]['contact'], url="https://t.me/kvonyeon")]
+    ])
+    await message.answer("👇", reply_markup=url_button)
+
+# Запуск
 async def main():
-    print("Бот запущен и готов к работе!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
